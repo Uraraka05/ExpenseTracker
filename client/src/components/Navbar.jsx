@@ -17,11 +17,11 @@ const Navbar = () => {
   return (
     <nav className="bg-indigo-600 text-white shadow-md">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <NavLink to="/" className="text-2xl font-bold">
+        <NavLink to="/" className="text-2xl font-bold flex-shrink-0 mr-4">
           MyFinance
         </NavLink>
         
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           <NavLink to="/" className={({ isActive }) => `flex items-center space-x-1 ${isActive ? 'text-yellow-300' : 'hover:text-yellow-200'}`}>
             <FaChartBar />
             <span>Dashboard</span>
