@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* Add this to the end of client/src/index.css */
+
+.bubble-background {
+  position: absolute; /* Changed from relative */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* Keep bubbles contained */
+  z-index: 0; /* Behind the content */
+}
+
+.bubble {
+  position: absolute;
+  bottom: -50px; /* Start below the screen */
+  width: 20px;
+  height: 20px;
+  background-color: rgba(0, 123, 255, 0.3); /* Light blue, semi-transparent */
+  border-radius: 50%;
+  opacity: 0;
+  animation: floatUp 15s infinite linear;
+}
+
+/* Define different sizes and delays for variation */
+.bubble:nth-child(1) { left: 10%; animation-delay: 0s; width: 15px; height: 15px; }
+.bubble:nth-child(2) { left: 20%; animation-delay: 2s; animation-duration: 17s; width: 25px; height: 25px; }
+.bubble:nth-child(3) { left: 35%; animation-delay: 4s; }
+.bubble:nth-child(4) { left: 50%; animation-delay: 1s; animation-duration: 19s; width: 18px; height: 18px; }
+.bubble:nth-child(5) { left: 65%; animation-delay: 3s; }
+.bubble:nth-child(6) { left: 80%; animation-delay: 5s; animation-duration: 16s; width: 22px; height: 22px; }
+.bubble:nth-child(7) { left: 90%; animation-delay: 1.5s; width: 17px; height: 17px; }
+.bubble:nth-child(8) { left: 55%; animation-delay: 6s; animation-duration: 18s; }
+.bubble:nth-child(9) { left: 25%; animation-delay: 2.5s; width: 28px; height: 28px; }
+.bubble:nth-child(10) { left: 75%; animation-delay: 4.5s; animation-duration: 20s; }
+
+@keyframes floatUp {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10%, 90% { /* Fade in quickly, stay visible, fade out slowly */
+      opacity: 1;
+  }
+  100% {
+    transform: translateY(-100vh); /* Float up off the screen */
+    opacity: 0;
+  }
+}
+
+/* Ensure content stays above bubbles */
+.dashboard-content {
+    position: relative;
+    z-index: 1;
+}
