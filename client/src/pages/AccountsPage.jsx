@@ -126,17 +126,12 @@ const AccountsPage = () => {
       if (!editingAccount || !editingAccount.name || !editingAccount.type) {
           return toast.error("Name and type are required.");
       }
-      // Convert rate from % string to decimal for saving
        const rateToSave = editingAccount.isLiability && editingAccount.interestRate ? parseFloat(editingAccount.interestRate) / 100 : 0;
 
       try {
-          // Exclude internal fields before sending update
-          const { _id, user, createdAt, updatedAt, __v, ...updateData } = editingAccount;
+          const { _id, user, createdAt, updatedAt, __v, balance, ...updateData } = editingAccount;
           await api.put(`/accounts/${_id}`, {
               ...updateData,
-              // Send balance only if needed, otherwise rely on transactions.
-              // For simplicity now, we allow direct balance edit but warn user.
-              balance: Number(editingAccount.balance), // Ensure number
               interestRate: rateToSave // Send decimal rate
           });
           toast.success("Account updated!");
@@ -144,7 +139,7 @@ const AccountsPage = () => {
           setEditingAccount(null);
           fetchAccountsData(); // Refresh list
       } catch (error) {
-          console.error("Update Account Error:", error.response || error); // Log error details
+          console.error("Update Account Error:", error.response || error);
           toast.error(error.response?.data?.message || "Failed to update account.");
       }
   };
@@ -349,6 +344,9 @@ const AccountsPage = () => {
                  <option>Mortgage</option> <option>Other Liability</option>
               </select>
             </div>
+            <p className="text-xs text-gray-500 mt-1">You cannot change the amount of an account. You can add transactions to change it.</p>
+            <p className="text-xs text-gray-500 mt-1">Warning: Changing type may affect associated transactions.</p>
+            <br></br>
             {/* Balance - Hidden by default, uncomment if needed */}
             {/*
             <div className="mb-4">

@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import useCurrency from '../hooks/useCurrency'; 
 import { FaTrash, FaPlus, FaEye, FaEyeSlash } from 'react-icons/fa'; // Added Eye icons
 import Spinner from '../components/Spinner';
+import AboutApp from '../components/AboutApp';
 
 // --- ChangePasswordForm (Updated) ---
 const ChangePasswordForm = () => {
@@ -225,6 +226,7 @@ const SettingsPage = () => {
           <CurrencySettings />
         </div>
       </div>
+      <AboutApp />
     </div>
   );
 };

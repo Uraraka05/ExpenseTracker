@@ -15,6 +15,7 @@ import transferRoutes from './routes/transferRoutes.js';
 import currencyRoutes from './routes/currencyRoutes.js';
 import projectionRoutes from './routes/projectionRoutes.js';
 import debtRoutes from './routes/debtRoutes.js';
+import ocrRoutes from './routes/ocrRoutes.js';
 
 dotenv.config();
 connectDB();
@@ -36,6 +37,7 @@ app.use('/api/data', dataRoutes);
 app.use('/api/transfers', transferRoutes);
 app.use('/api/currency', currencyRoutes);
 app.use('/api/projections', projectionRoutes);
+app.use('/api/ocr', ocrRoutes);
 app.use('/api/debt', debtRoutes);
 
 

@@ -6,42 +6,10 @@ import Spinner from '../components/Spinner';
 import Modal from '../components/Modal';
 import moment from 'moment';
 import useCurrency from '../hooks/useCurrency';
-import Tesseract from 'tesseract.js';
 
 const formatDateTimeLocal = (dateString) => {
     const date = moment(dateString);
     return date.isValid() ? date.format('YYYY-MM-DDTHH:mm') : '';
-};
-
-const preprocessImage = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Set canvas size to image size
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.filter = 'grayscale(100%) contrast(150%)'; // Example: 100% grayscale, 150% contrast
-
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob); // Return the processed image Blob
-          } else {
-            reject(new Error('Canvas to Blob conversion failed'));
-          }
-        }, file.type); // Keep original file type if possible
-      };
-      img.onerror = reject; // Handle image loading errors
-      img.src = event.target.result; // Load image data into Image object
-    };
-    reader.onerror = reject; // Handle file reading errors
-    reader.readAsDataURL(file); // Read the file as a Data URL
-  });
 };
 
 const TransactionsPage = () => {
@@ -51,8 +19,7 @@ const TransactionsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({ description: '', category: '', account: '' });
-  const { formatCurrency, settings } = useCurrency(); // Added settings check
-
+  const { formatCurrency, settings } = useCurrency(); 
   const [newTxForm, setNewTxForm] = useState({
     description: '',
     amount: '',
@@ -61,11 +28,10 @@ const TransactionsPage = () => {
     date: formatDateTimeLocal(new Date()), 
     account: '',
   });
-
+  const [initialLoading, setInitialLoading] = useState(true); 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState(0);
   const fileInputRef = useRef(null);
 
   const fetchAccounts = async () => {
@@ -106,6 +72,7 @@ const TransactionsPage = () => {
       toast.error('Failed to fetch transactions');
     } finally {
       setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -231,227 +198,60 @@ const TransactionsPage = () => {
     const file = event.target.files[0];
     if (!file) return;
 
+    // Basic file type check
+    if (!file.type.startsWith('image/')) {
+        toast.error('Please upload an image file (JPG, PNG, etc.).');
+        if (fileInputRef.current) fileInputRef.current.value = ""; // Reset input
+        return;
+    }
+
     setOcrLoading(true);
-    setOcrProgress(0);
-    toast.loading('Processing & Scanning bill...'); // Updated message
+    toast.loading('Uploading & Scanning bill...');
+
+    const formData = new FormData();
+    formData.append('file', file); // 'file' must match upload.single('file') in backend
 
     try {
-      // 1. Preprocess the image
-      console.log("Preprocessing image...");
-      const processedImageBlob = await preprocessImage(file);
-      console.log("Image preprocessing complete.");
-
-      // 2. Run OCR on the processed image
-      const { data: { text } } = await Tesseract.recognize(
-        processedImageBlob, // Use the processed Blob
-        'eng',
-        {
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              setOcrProgress(Math.round(m.progress * 100));
-            }
-          }
-        }
-      );
+      // Send image to our backend endpoint
+      const { data } = await api.post('/ocr/scan-receipt', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
 
       toast.dismiss();
-      console.log("OCR Result Text:\n", text);
-      parseOcrText(text);
-      toast.success('Scan complete! Check form data.');
+
+      if (data.success) {
+        toast.success('Scan complete! Check form data.');
+        console.log("Parsed Data from Backend:", data);
+
+        // --- Pre-fill form with backend results ---
+        setNewTxForm(prev => ({
+          ...prev, // Keep existing category, account, type if user set them
+          description: data.description || 'Scanned Bill',
+          amount: data.amount || '',
+          // Use backend date if valid, otherwise keep existing form date
+          date: data.date ? formatDateTimeLocal(data.date) : prev.date,
+          type: 'expense', // Default to expense
+        }));
+        // ----------------------------------------
+      } else {
+        // Handle cases where backend reported OCR failure but didn't throw 500
+        toast.error(data.message || "Failed to extract data from bill.");
+      }
 
     } catch (error) {
       toast.dismiss();
-      console.error("Image Processing/OCR Error:", error);
-      toast.error("Failed to process or scan bill.");
+      console.error("OCR Upload/Scan Error:", error.response || error);
+      toast.error(error.response?.data?.message || "Failed to scan bill.");
     } finally {
       setOcrLoading(false);
-      setOcrProgress(0);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  // --- 4. Function to parse extracted text and pre-fill form ---
-  // --- ENHANCED OCR Parsing Function ---
-  // --- ENHANCED OCR Parsing Function (v2) ---
-  const parseOcrText = (text) => {
-    console.log("--- Starting OCR Text Parsing ---");
-    let extractedAmount = '';
-    // Default to current date/time, try to find better one
-    let extractedDate = formatDateTimeLocal(new Date());
-    let extractedDescription = 'Scanned Bill'; // Default description
-
-    // Clean lines: split, trim whitespace, remove extra spaces, filter empty
-    const lines = text.split('\n')
-                      .map(line => line.trim().replace(/\s{2,}/g, ' '))
-                      .filter(line => line.length > 0);
-    console.log("Lines Found:", lines.length);
-    console.log("Cleaned Lines:", lines); // Log cleaned lines
-
-    // --- 1. Extract Date & Time ---
-    // Regex for various date formats (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, DD-Mon-YYYY)
-    // Optionally includes time (HH:MM, HH:MM:SS, with AM/PM)
-    const dateTimeRegex = /(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}-(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*-\d{2,4})[,\s]*(\d{1,2}:\d{2}(?::\d{2})?\s?(?:AM|PM)?)?/gi; // Slightly improved month regex
-    let possibleDates = [];
-    let dateMatch;
-
-    // Find all potential date/time strings
-    while ((dateMatch = dateTimeRegex.exec(text)) !== null) {
-        let dateString = dateMatch[1]; // The date part
-        let timeString = dateMatch[2] || ''; // The time part (optional)
-
-        // Attempt to parse using multiple formats, including time if present
-        let parsed = moment(dateString + ' ' + timeString, [
-             'DD-MM-YYYY hh:mm:ss A', 'DD/MM/YYYY hh:mm:ss A',
-             'MM-DD-YYYY hh:mm:ss A', 'MM/DD/YYYY hh:mm:ss A',
-             'YYYY-MM-DD hh:mm:ss A', 'DD-MMM-YYYY hh:mm:ss A',
-             'DD-MM-YYYY HH:mm:ss', 'DD/MM/YYYY HH:mm:ss',
-             'MM-DD-YYYY HH:mm:ss', 'MM/DD/YYYY HH:mm:ss',
-             'YYYY-MM-DD HH:mm:ss', 'DD-MMM-YYYY HH:mm:ss',
-             'DD-MM-YYYY HH:mm', 'DD/MM/YYYY HH:mm',
-             'MM-DD-YYYY HH:mm', 'MM/DD/YYYY HH:mm',
-             'YYYY-MM-DD HH:mm', 'DD-MMM-YYYY HH:mm',
-             // Date only formats
-             'DD-MM-YYYY', 'DD/MM/YYYY', 'MM-DD-YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD', 'DD-MMM-YYYY'
-        ], true); // Added true for strict parsing
-
-        if (parsed.isValid()) {
-            possibleDates.push(parsed);
-        }
-    }
-    console.log("Possible Dates Found:", possibleDates.map(d => d.format()));
-
-    if(possibleDates.length > 0) {
-        // Sort dates descending (most recent first)
-        possibleDates.sort((a, b) => b - a);
-        // Assume the most recent valid date found is the transaction date
-        extractedDate = formatDateTimeLocal(possibleDates[0].toDate());
-         console.log("Selected Date:", extractedDate);
-    } else {
-        console.log("No valid dates found in specific formats, using current date.");
-    }
-
-
-    // --- 2. Extract Total Amount (REVISED LOGIC) ---
-    const totalKeywords = ['NET', 'Total', 'Amount Due', 'Grand Total', 'Balance', 'Paid', 'Net Amount', 'TOTAL PAYABLE'];
-    let potentialTotals = [];
-    // More robust amount regex: optional currency, spaces, digits/commas, required decimal point and two digits.
-    const amountRegexStrict = /[₹$€£]?\s?([\d,]+(\.\d{2}))\b/g;
-
-    console.log("--- Searching for Amount ---");
-    // Iterate lines in reverse (totals often near the bottom)
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        let foundKeyword = null;
-        let amountOnLine = null;
-
-        // Check if line contains a total keyword (case-insensitive)
-        for (const keyword of totalKeywords) {
-            // Use word boundaries (\b) to avoid partial matches (e.g., 'Totaling')
-            if (new RegExp(`\\b${keyword}\\b`, 'i').test(line)) {
-                foundKeyword = keyword;
-                break; // Found a keyword on this line
-            }
-        }
-
-        // Search for a strictly formatted amount (e.g., 123.00, 1,234.56) on this line
-        let amountMatchResult;
-        amountRegexStrict.lastIndex = 0; // Reset regex index for global flag
-        while((amountMatchResult = amountRegexStrict.exec(line)) !== null) {
-            const amountStr = amountMatchResult[1].replace(/,/g, ''); // Get amount incl decimal, remove commas
-            const amountNum = parseFloat(amountStr);
-            if (!isNaN(amountNum) && amountNum > 0) {
-                 // Store all amounts found on the line, keep the largest
-                 if (amountOnLine === null || amountNum > amountOnLine.amount) {
-                      amountOnLine = { amount: amountNum, lineIndex: i };
-                 }
-            }
-        }
-
-        // If both keyword and amount are on the same line, store it with high priority
-        if (foundKeyword && amountOnLine) {
-            console.log(`Potential Total (Keyword Match): ${amountOnLine.amount} on line ${i} (Keyword: ${foundKeyword})`);
-            potentialTotals.push({ ...amountOnLine, priority: 1 }); // High priority
-        }
-        // If only amount found (no keyword), store with lower priority
-        else if (amountOnLine && !foundKeyword) {
-            // Simple check to avoid adding item prices: is the amount significantly larger than others found so far? (Very basic heuristic)
-            const averageAmountFound = potentialTotals.reduce((sum, p) => sum + p.amount, 0) / (potentialTotals.length || 1);
-            // Only add if it's somewhat plausible as a total (e.g., not much smaller than amounts already found near keywords)
-            if (potentialTotals.length === 0 || amountOnLine.amount >= averageAmountFound * 0.5) {
-                 console.log(`Potential Amount (No Keyword): ${amountOnLine.amount} on line ${i}`);
-                 potentialTotals.push({ ...amountOnLine, priority: 2 }); // Lower priority
-            } else {
-                 console.log(`Skipping likely item price (No Keyword): ${amountOnLine.amount} on line ${i}`);
-            }
-        }
-    }
-    if (potentialTotals.length > 0) {
-        potentialTotals.sort((a, b) => {
-            if (a.priority !== b.priority) {
-                return a.priority - b.priority; // Lower priority number (1) comes first
-            }
-            return b.amount - a.amount; // Larger amount comes first
-        });
-        extractedAmount = potentialTotals[0].amount.toFixed(2);
-        console.log("Selected Amount:", extractedAmount, "From:", potentialTotals[0]);
-    } else {
-         console.log("Could not determine amount using strict format.");
-    }
-
-
-    // --- 3. Extract Vendor/Store Name (Improved Heuristic) ---
-    console.log("--- Searching for Vendor ---");
-    let potentialVendors = [];
-    const maxLinesToCheck = Math.min(lines.length, 5); // Check top 5 lines
-
-    for (let i = 0; i < maxLinesToCheck; i++) {
-        const line = lines[i];
-        // Skip lines that look like addresses, dates, phone numbers, or generic terms
-        if (line.match(/\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/)) continue; // Skip dates like DD/MM/YYYY
-        if (line.match(/\d{4}-\d{2}-\d{2}/)) continue; // Skip dates like YYYY-MM-DD
-        if (line.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i)) continue; // Skip lines with month names
-        if (line.match(/(\d{3}[-\.\s]?){2}\d{4}/)) continue; // Skip phone numbers (approximate)
-        if (line.match(/(?:[A-Z]\d[A-Z][-\s]?\d[A-Z]\d|\d{6})/i)) continue; // Skip postal codes (UK/India example)
-        if (line.match(/\b\d{5,}\b/)) continue; // Skip long numbers (maybe zip codes, IDs, GST numbers like 9036139989) unless part of name
-        if (line.match(/address|street|road|city|state|pincode|gstin/i)) continue; // Skip address lines
-        if (line.toLowerCase().includes('invoice') || line.toLowerCase().includes('receipt') || line.toLowerCase().includes('bill #') || line.toLowerCase().includes('cash memo')) continue;
-        if (line.length < 3 || line.length > 60) continue; // Skip very short/long lines
-        if (!line.match(/[a-zA-Z]/)) continue; // Skip lines with no letters
-
-        potentialVendors.push(line);
-    }
-    console.log("Potential Vendors:", potentialVendors);
-
-    if (potentialVendors.length > 0) {
-        let bestVendor = potentialVendors.find(v => v === v.toUpperCase() && v.length > 3 && !v.match(/^\d+$/)); // Find suitable ALL CAPS
-        if (bestVendor) {
-            extractedDescription = bestVendor;
-        } else {
-            extractedDescription = potentialVendors[0]; // Default to the first likely line
-        }
-         extractedDescription = extractedDescription.replace(/\s\d{6,}$/, '').trim();
-
-        console.log("Selected Description:", extractedDescription);
-    } else {
-        console.log("Could not determine vendor/description, using default.");
-        extractedDescription = lines[0] || 'Scanned Bill'; // Fallback to first line if no potentials found
-    }
-
-    console.log("--- Applying extracted data to form ---");
-    setNewTxForm(prev => ({
-      ...prev,
-      description: extractedDescription,
-      amount: extractedAmount,
-      date: extractedDate,
-      type: 'expense', // Default scanned bills to expense
-      category: prev.category, // Keep category if user already selected one
-      account: prev.account // Keep account if user already selected one
-    }));
-  };
-
-  if (loading || !settings) return <Spinner />;
+  if (initialLoading) return <Spinner />;
 
   return (
     <>
@@ -461,27 +261,19 @@ const TransactionsPage = () => {
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-2xl font-bold mb-4">Add Transaction</h2>
             <div className="mb-4">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                ref={fileInputRef}
-                style={{ display: 'none' }} // Hide the default input
-                id="imageUpload"
-              />
+              <input type="file" accept="image/*" onChange={handleImageUpload} ref={fileInputRef} style={{ display: 'none' }} id="imageUpload"/>
               <button
                 type="button"
-                onClick={() => fileInputRef.current.click()} // Trigger hidden input
-                className="w-full bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center justify-center space-x-2 disabled:bg-teal-300"
-                disabled={ocrLoading}
-              >
+                onClick={() => fileInputRef.current.click()}
+                className={`w-full bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 flex items-center justify-center space-x-2 ${ocrLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={ocrLoading} >
                 <FaCamera />
-                <span>{ocrLoading ? `Scanning... (${ocrProgress}%)` : 'Scan Bill (Beta)'}</span>
+                <span>{ocrLoading ? `Scanning...` : 'Scan Bill'}</span>
               </button>
-               {ocrLoading && <div className="w-full bg-gray-200 rounded-full h-1 mt-1"><div className="bg-teal-500 h-1 rounded-full" style={{ width: `${ocrProgress}%` }}></div></div>}
-               <p className="text-xs text-gray-500 mt-1">Upload a clear bill image.</p>
+               {ocrLoading && <div className="w-full bg-gray-200 rounded-full h-1 mt-1"><div className="bg-teal-500 h-1 rounded-full animate-pulse"></div></div>} {/* Simple pulse animation */}
+               <p className="text-xs text-gray-500 mt-1">Upload bill image (JPG, PNG).</p>
             </div>
-             <hr className="my-4"/>
+
             <form onSubmit={handleSubmit}>
               {/* Account */}
               <div className="mb-4">
@@ -537,10 +329,6 @@ const TransactionsPage = () => {
                   <option value="">All Accounts</option>
                   {accounts.map(acc => <option key={acc._id} value={acc._id}>{acc.name}</option>)}
               </select>
-              {/* Removed redundant fetch trigger, useEffect handles it */}
-              {/* <button onClick={() => { setTransactions([]); fetchTransactions(true); }} className="p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
-                  <FaSearch />
-              </button> */}
           </div>
 
           <div className="bg-white p-6 rounded-lg shadow-md">

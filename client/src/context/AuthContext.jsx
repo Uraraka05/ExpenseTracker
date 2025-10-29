@@ -40,6 +40,11 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data } = await api.post('/auth/login', { email, password });
       setToken(data.token);
+      const firstLoginTimestamp = localStorage.getItem('firstLoginTimestamp');
+      if (!firstLoginTimestamp) {
+        localStorage.setItem('firstLoginTimestamp', Date.now().toString());
+        console.log("First login detected, timestamp stored.");
+      }
       toast.success('Logged in successfully!');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Login failed');

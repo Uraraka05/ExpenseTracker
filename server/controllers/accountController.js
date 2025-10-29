@@ -115,10 +115,10 @@ const updateAccount = async (req, res) => {
     if (type !== undefined) account.type = type;
 
     // Direct balance update - use with caution
-    if (balance !== undefined) {
+    /*if (balance !== undefined) {
         account.balance = Number(balance);
     }
-
+*/
     account.interestRate = isLiability && interestRate !== undefined
         ? parseFloat(interestRate) / 100
         : 0; // Set to 0 if not liability or rate not provided
