@@ -1,10 +1,8 @@
 import axios from 'axios';
 import FormData from 'form-data';
-import moment from 'moment'; // For date parsing
+import moment from 'moment-timezone'; // For date parsing
 
-// Helper to find the most likely total amount
 const findTotalAmount = (parsedText) => {
-    // OCR.space provides parsed results including lines
     if (!parsedText) return null;
 
     const lines = parsedText.split('\n');
@@ -83,7 +81,8 @@ const findDate = (parsedText) => {
 
     while ((dateMatch = dateTimeRegex.exec(parsedText)) !== null) {
         let dateString = dateMatch[1];
-        let timeString = dateMatch[2] || ''; // Use found time or empty string
+        let timeString = dateMatch[2] || ''; 
+        let combinedString = (dateString + ' ' + timeString).trim();
 
         // --- Define formats for moment to try ---
         // Prioritize formats with time if timeString is present
@@ -111,7 +110,7 @@ const findDate = (parsedText) => {
             'YYYY-MM-DD', 'DD-MMM-YYYY'
         ];
 
-        let parsed = moment(dateString + ' ' + timeString.trim(), formatsToTry, true); // Strict parsing
+        let parsed = moment(dateString + ' ' + timeString.trim(), formatsToTry, true, "Asia/Kolkata"); // Strict parsing
 
         if (parsed.isValid()) {
             // Check if year is ambiguous (2 digits) and likely needs fixing
@@ -126,21 +125,19 @@ const findDate = (parsedText) => {
     }
 
     if (possibleDateTimes.length > 0) {
-        // Sort descending (most recent date/time first)
-        possibleDateTimes.sort((a, b) => b - a);
-        // Heuristic: Often the most recent date/time on a receipt is the transaction time
-        console.log("OCR Parse: Selected DateTime:", possibleDateTimes[0].format());
-        return possibleDateTimes[0].toDate(); // Return as standard Date object
+        possibleDateTimes.sort((a, b) => b.valueOf() - a.valueOf()); 
+        const selectedDateObject = possibleDateTimes[0].toDate();
+        console.log("OCR Parse: Selected DateTime (as Date Object):", selectedDateObject);
+        return selectedDateObject; 
     }
 
      console.log("OCR Parse: No valid date/time found.");
-    return null; // Return null if no valid date found
+    return null; 
 };
 
 const findVendor = (parsedText) => {
      if (!parsedText) return null;
      console.log("OCR Parse: Searching for Vendor...");
-     // Clean lines: trim, remove extra spaces
      const lines = parsedText.split('\n')
                            .map(line => line.trim().replace(/\s{2,}/g, ' '))
                            .filter(line => line.length > 0);
