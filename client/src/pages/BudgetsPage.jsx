@@ -4,17 +4,19 @@ import toast from 'react-hot-toast';
 import { FaTrash, FaPlus } from 'react-icons/fa';
 import Spinner from '../components/Spinner';
 import BarChart from '../components/BarChart';
-// --- 1. Import the hook ---
 import useCurrency from '../hooks/useCurrency';
+import { expenseCategories } from '../constants/categories';
 
 const BudgetsPage = () => {
   const [budgets, setBudgets] = useState([]);
   const [expenses, setExpenses] = useState([]); 
   const [loading, setLoading] = useState(true);
-  const [formData, setFormData] = useState({ category: '', amount: '' });
   const [chartData, setChartData] = useState(null); 
-  // --- 2. Use the hook ---
   const { formatCurrency, settings } = useCurrency();
+  const [formData, setFormData] = useState({ 
+    category: expenseCategories[0],
+    amount: '' 
+  });
 
   const fetchData = async () => {
     try {
@@ -36,7 +38,6 @@ const BudgetsPage = () => {
   };
 
   useEffect(() => {
-    // Only fetch data if settings are loaded
     if (settings) {
       fetchData();
     }
@@ -100,7 +101,10 @@ const BudgetsPage = () => {
       });
       
       toast.success('Budget saved!');
-      setFormData({ category: '', amount: '' }); // Reset form
+      setFormData({ 
+        category: expenseCategories[0], // Reset to default
+        amount: '' 
+      });
       fetchData(); // Refetch all data to update list and chart
     } catch (error) {
       toast.error('Failed to save budget');
@@ -132,21 +136,22 @@ const BudgetsPage = () => {
           <h2 className="text-2xl font-bold mb-4">Set Budget</h2>
           <form onSubmit={handleSubmit}>
             <div className="mb-4">
-              {/* Removed dark: classes */}
               <label className="block text-gray-700 mb-2" htmlFor="category">Category</label>
-              <input
-                type="text"
-                id="category"
-                name="category"
-                // Removed dark: classes
-                className="w-full px-3 py-2 border rounded-lg"
-                value={formData.category}
-                onChange={handleInputChange}
-                placeholder="e.g., Groceries"
-              />
+              <select 
+                name="category" 
+                id="category" 
+                value={formData.category} 
+                onChange={handleInputChange} 
+                className="w-full px-3 py-2 border rounded-lg bg-white" 
+                required
+              >
+                {/* We only budget for expenses */}
+                {expenseCategories.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
             </div>
             <div className="mb-4">
-              {/* Removed dark: classes & updated label */}
               <label className="block text-gray-700 mb-2" htmlFor="amount">Monthly Amount (in INR)</label>
               <input
                 type="number"
