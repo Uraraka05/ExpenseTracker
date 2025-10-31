@@ -5,6 +5,7 @@ import { FaPlus, FaTrash } from 'react-icons/fa';
 import Spinner from '../components/Spinner';
 import moment from 'moment';
 import useCurrency from '../hooks/useCurrency';
+import { expenseCategories, incomeCategories } from '../constants/categories';
 
 const RecurringPage = () => {
   const [schedules, setSchedules] = useState([]);
@@ -16,7 +17,7 @@ const RecurringPage = () => {
     description: '',
     amount: '',
     type: 'expense',
-    category: '',
+    category: 'Uncategorized',
     frequency: 'monthly',
     startDate: new Date().toISOString().split('T')[0],
     account: '',
@@ -49,7 +50,19 @@ const RecurringPage = () => {
   }, [settings]);
 
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    setFormData(prev => {
+      const newState = {
+        ...prev,
+        [name]: value
+      };
+      if (name === 'type') {
+        newState.category = value === 'income' ? incomeCategories[0] : expenseCategories[0];
+      }
+
+      return newState;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -65,7 +78,7 @@ const RecurringPage = () => {
         ...prev,
         description: '',
         amount: '',
-        category: '',
+        category: 'Uncategorized',
         type: 'expense',
         startDate: new Date().toISOString().split('T')[0],
       }));
@@ -85,6 +98,7 @@ const RecurringPage = () => {
       }
     }
   };
+  const currentCategories = formData.type === 'income' ? incomeCategories : expenseCategories;
 
   if (loading || !settings) return <Spinner />;
 
@@ -123,7 +137,18 @@ const RecurringPage = () => {
              {/* Category */}
             <div className="mb-4">
               <label className="block text-gray-700 mb-2" htmlFor="category">Category</label>
-              <input type="text" name="category" id="category" value={formData.category} onChange={handleInputChange} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Rent, Salary" required />
+              <select 
+                name="category" 
+                id="category" 
+                value={formData.category} 
+                onChange={handleInputChange} 
+                className="w-full px-3 py-2 border rounded-lg bg-white" 
+                required
+              >
+                {currentCategories.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
             </div>
             {/* Frequency */}
             <div className="mb-4">

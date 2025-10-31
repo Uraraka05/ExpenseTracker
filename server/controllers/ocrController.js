@@ -7,20 +7,14 @@ const findTotalAmount = (parsedText) => {
 
     const lines = parsedText.split('\n');
     let potentialTotals = [];
-    // Keywords often associated with totals
     const totalKeywords = ['Total', 'Amount', 'NET', 'Balance', 'Paid'];
-
-    // Regex for typical currency amounts (more flexible than before)
     const amountRegex = /[₹$€£]?\s?([\d,]+(?:\.\d{2})?)\b/g;
-
-    // Iterate lines from bottom up
     for (let i = lines.length - 1; i >= 0; i--) {
         const lineText = lines[i].trim();
         let amountsOnLine = [];
         let match;
         amountRegex.lastIndex = 0; // Reset regex
 
-        // Find all currency-like numbers on the line
         while ((match = amountRegex.exec(lineText)) !== null) {
             const numStr = match[1].replace(/,/g, '');
             const num = parseFloat(numStr);
@@ -29,17 +23,14 @@ const findTotalAmount = (parsedText) => {
             }
         }
 
-        // If numbers were found on this line
         if (amountsOnLine.length > 0) {
             const largestAmountOnLine = Math.max(...amountsOnLine);
             let priority = 3; // Lowest priority by default
 
-            // Check for keywords on the same line
             if (totalKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(lineText))) {
                 priority = 1; // Highest priority if keyword and amount on same line
                 console.log(`OCR Parse: Found amount ${largestAmountOnLine} with keyword on line ${i}`);
             }
-            // Check if keyword was on the previous line (common pattern)
             else if (i > 0 && totalKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(lines[i-1]))) {
                  priority = 2; // Medium priority if keyword on line above
                  console.log(`OCR Parse: Found amount ${largestAmountOnLine} on line ${i}, keyword likely on line ${i-1}`);
@@ -52,7 +43,6 @@ const findTotalAmount = (parsedText) => {
 
     if (potentialTotals.length === 0) return null;
 
-    // Sort by priority (lower number first), then by amount descending
     potentialTotals.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority;
         return b.amount - a.amount;
@@ -62,8 +52,7 @@ const findTotalAmount = (parsedText) => {
     return potentialTotals[0].amount.toFixed(2); // Return the best candidate
 };
 
-// Helper to find the most likely date
-// --- UPDATED findDate Helper ---
+
 const findDate = (parsedText) => {
     if (!parsedText) return null;
     console.log("OCR Parse: Searching for Date/Time...");
@@ -84,8 +73,6 @@ const findDate = (parsedText) => {
         let timeString = dateMatch[2] || ''; 
         let combinedString = (dateString + ' ' + timeString).trim();
 
-        // --- Define formats for moment to try ---
-        // Prioritize formats with time if timeString is present
         const formatsToTry = timeString ? [
             'DD/MM/YY hh:mm:ss A', 'DD-MM-YY hh:mm:ss A',
             'DD/MM/YYYY hh:mm:ss A', 'DD-MM-YYYY hh:mm:ss A',
@@ -113,7 +100,6 @@ const findDate = (parsedText) => {
         let parsed = moment(dateString + ' ' + timeString.trim(), formatsToTry, true, "Asia/Kolkata"); // Strict parsing
 
         if (parsed.isValid()) {
-            // Check if year is ambiguous (2 digits) and likely needs fixing
             if (dateString.match(/\d{2}$/) && parsed.year() > moment().year() + 1) {
                 parsed.subtract(100, 'years'); // Correct year like '25' becoming 2025 not 1925 etc.
             }
@@ -146,20 +132,16 @@ const findVendor = (parsedText) => {
 
      let potentialVendors = [];
      const maxLinesToCheck = Math.min(lines.length, 5); // Focus on top lines
-
-     // Keywords often found *below* the vendor name (used to stop searching)
      const stopKeywords = ['bill', 'invoice', 'receipt', 'date', 'time', 'gstin', 'phone', 'ph:', 'address', 'customer', 'cashier', 'order', 'table', 'item', 'qty', 'rate', 'amount', 'total', 'tax'];
 
      for (let i = 0; i < maxLinesToCheck; i++) {
         const line = lines[i];
 
-        // If line contains a stop keyword, assume vendor was on previous lines
         if (stopKeywords.some(kw => new RegExp(`\\b${kw}\\b`, 'i').test(line))) {
              console.log(`OCR Parse: Stopping vendor search at line ${i} due to keyword: "${line}"`);
             break;
         }
 
-        // Basic quality checks
         if (line.length < 3 || line.length > 60) continue; // Skip very short/long lines
         if (!line.match(/[a-zA-Z]/)) continue; // Skip lines with no letters
         if (line.match(/^\d+[-/\s]+\d+[-/\s]+\d+/)) continue; // Skip lines starting like dates
@@ -188,7 +170,6 @@ const findVendor = (parsedText) => {
      }
 
      console.log("OCR Parse: No suitable vendor name found, using first line as fallback.");
-     // Fallback to first line if no good candidates
      return lines[0].substring(0, 100);
 };
 

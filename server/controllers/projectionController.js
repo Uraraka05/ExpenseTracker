@@ -1,6 +1,7 @@
 import Account from '../models/Account.js';
 import RecurringTransaction from '../models/RecurringTransaction.js';
-import moment from 'moment'; // Make sure moment is installed
+import moment from 'moment-timezone'; // Use moment-timezone
+import Transaction from '../models/Transaction.js';
 
 // @desc    Get cash flow projection
 // @route   GET /api/projections
@@ -8,104 +9,115 @@ import moment from 'moment'; // Make sure moment is installed
 const getCashFlowProjection = async (req, res) => {
   try {
     const userId = req.user._id;
-    // Get duration in months from query (default to 3 months)
     const durationMonths = parseInt(req.query.duration) || 3;
+    const startDate = moment().startOf('day');
     const endDate = moment().add(durationMonths, 'months').endOf('day');
 
-    // 1. Get current balances
+    const mostActiveAccountAgg = await Transaction.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: "$account", count: { $sum: 1 } } }, // Count transactions per account
+      { $sort: { count: -1 } }, // Sort by count descending
+      { $limit: 1 } // Take the top one
+    ]);
+    const defaultAccountId = mostActiveAccountAgg.length > 0 ? mostActiveAccountAgg[0]._id.toString() : null;
+    console.log("Default Account ID:", defaultAccountId);
+
     const accounts = await Account.find({ user: userId });
-    let currentBalances = {};
-    let totalBalance = 0;
+    let accountBalances = {}; // Stores { accountId: balance }
+    let accountProjections = {}; // Stores { accountId: [{ date, balance }] }
+    let accountNames = {}; // Stores { accountId: name }
+
     accounts.forEach(acc => {
-        currentBalances[acc._id.toString()] = acc.balance;
-        totalBalance += acc.balance;
+      const accId = acc._id.toString();
+      accountBalances[accId] = acc.balance;
+      accountNames[accId] = acc.name;
+      accountProjections[accId] = [{ date: startDate.format('YYYY-MM-DD'), balance: acc.balance }];
     });
 
-    // 2. Get recurring transactions
+    const finalDefaultAccountId = defaultAccountId && accountNames[defaultAccountId] 
+                                    ? defaultAccountId 
+                                    : (Object.keys(accountNames).length > 0 ? Object.keys(accountNames)[0] : null);
+
     const recurringTxs = await RecurringTransaction.find({ user: userId });
 
-    // 3. Simulate future transactions
-    const projectionData = [];
-    let currentDate = moment().startOf('day');
-    let simulatedBalances = { ...currentBalances }; // Copy initial balances
-    let simulatedTotalBalance = totalBalance;
+    const projectionTimeline = []; // For the TOTAL balance
+    let totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+    projectionTimeline.push({ date: startDate.format('YYYY-MM-DD'), balance: totalBalance });
 
-    // Add starting point
-    projectionData.push({ date: currentDate.format('YYYY-MM-DD'), balance: simulatedTotalBalance });
+    let upcomingEvents = []; // To store the list of future events
+    let currentDate = startDate.clone();
 
-    // Loop day by day until end date
     while (currentDate.isBefore(endDate)) {
       currentDate.add(1, 'day'); // Move to the next day
-
       let dailyChange = 0;
+      let dailyAccountChanges = {};
 
       for (const tx of recurringTxs) {
-        const startDate = moment(tx.startDate);
-        // Check if today is a scheduled date based on frequency
+        const txStartDate = moment(tx.startDate);
         let isDue = false;
-        switch (tx.frequency) {
-          case 'daily':
-            // Due if start date is today or in the past
-            if (currentDate.isSameOrAfter(startDate, 'day')) {
-                 isDue = true;
-            }
-            break;
-          case 'weekly':
-            // Due if it's the same day of the week AND after start date
-            if (currentDate.isSameOrAfter(startDate, 'day') && currentDate.day() === startDate.day()) {
-              isDue = true;
-            }
-            break;
-          case 'monthly':
-            // Due if it's the same day of the month AND after start date
-             if (currentDate.isSameOrAfter(startDate, 'day') && currentDate.date() === startDate.date()) {
-              isDue = true;
-            }
-            // Handle end-of-month cases (e.g., start date 31st, current month only has 30 days)
-             else if (currentDate.isSameOrAfter(startDate, 'day') && startDate.date() > currentDate.daysInMonth() && currentDate.isSame(currentDate.clone().endOf('month'), 'day')) {
-                 isDue = true;
+        const start = moment(tx.startDate).startOf('day');
+        
+        if (currentDate.isSameOrAfter(start)) {
+             switch (tx.frequency) {
+                case 'daily': isDue = true; break;
+                case 'weekly': if (currentDate.day() === start.day()) isDue = true; break;
+                case 'monthly':
+                    if (currentDate.date() === start.date()) isDue = true;
+                    else if (start.date() > currentDate.daysInMonth() && currentDate.isSame(currentDate.clone().endOf('month'), 'day')) isDue = true;
+                    break;
+                case 'yearly':
+                    if (currentDate.month() === start.month() && currentDate.date() === start.date()) isDue = true;
+                    break;
              }
-            break;
-          case 'yearly':
-            // Due if it's the same month and day AND after start date
-            if (currentDate.isSameOrAfter(startDate, 'day') && currentDate.month() === startDate.month() && currentDate.date() === startDate.date()) {
-              isDue = true;
-            }
-            break;
         }
 
         if (isDue) {
           const amount = Number(tx.amount);
           const accountId = tx.account.toString();
-          if (simulatedBalances[accountId] !== undefined) { // Check if account still exists
+          if (accountBalances[accountId] !== undefined) {
             const change = tx.type === 'income' ? amount : -amount;
-            simulatedBalances[accountId] += change;
+            
+            upcomingEvents.push({
+                date: currentDate.format('YYYY-MM-DD'),
+                description: tx.description,
+                amount: change,
+                accountName: accountNames[accountId]
+            });
+            
+            if (dailyAccountChanges[accountId]) {
+                dailyAccountChanges[accountId] += change;
+            } else {
+                dailyAccountChanges[accountId] = change;
+            }
             dailyChange += change;
           }
         }
-      } // End loop through recurring txs for the day
+      } 
 
-       // If balance changed today, update total and potentially add data point
-       if (dailyChange !== 0) {
-           simulatedTotalBalance += dailyChange;
-           // Optional: Add daily data points for higher resolution chart
-           // projectionData.push({ date: currentDate.format('YYYY-MM-DD'), balance: simulatedTotalBalance });
-       }
-
-        // --- Store data point at the end of each month ---
-        if (currentDate.isSame(currentDate.clone().endOf('month'), 'day')) {
-            projectionData.push({ date: currentDate.format('YYYY-MM-DD'), balance: simulatedTotalBalance });
+      if (dailyChange !== 0) {
+        totalBalance += dailyChange;
+        for (const accId in dailyAccountChanges) {
+             accountBalances[accId] += dailyAccountChanges[accId];
+             accountProjections[accId].push({ date: currentDate.format('YYYY-MM-DD'), balance: accountBalances[accId] });
         }
+      }
 
-    } // End loop through days
-
-    // Ensure the final end date is included if not already end of month
-     if (!moment(projectionData[projectionData.length - 1]?.date).isSame(endDate.format('YYYY-MM-DD'))) {
-         projectionData.push({ date: endDate.format('YYYY-MM-DD'), balance: simulatedTotalBalance });
-     }
-
-
-    res.json(projectionData);
+      if (dailyChange !== 0 || currentDate.isSame(currentDate.clone().endOf('month'), 'day')) {
+          projectionTimeline.push({ date: currentDate.format('YYYY-MM-DD'), balance: totalBalance });
+          if(dailyChange === 0) { // If no change today but it's EOM
+               for (const accId in accountBalances) {
+                   accountProjections[accId].push({ date: currentDate.format('YYYY-MM-DD'), balance: accountBalances[accId] });
+               }
+          }
+      }
+    } 
+    res.json({
+        projectionTimeline,
+        accountProjections,   
+        upcomingEvents,
+        accountNames,         // Map of ID -> Name
+        defaultAccountId: finalDefaultAccountId // Send the default ID
+    });
 
   } catch (error) {
     console.error("Projection Error:", error);

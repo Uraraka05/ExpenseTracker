@@ -174,9 +174,16 @@ const AccountsPage = () => {
 
   // --- Render Logic ---
   if (loadingAccounts || !settings) return <Spinner />;
+  const totalNetWorth = accounts.reduce((sum, acc) => sum + Number(acc.balance), 0);
 
   return (
     <div>
+      <div className="mb-8 text-center bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-xl font-semibold text-gray-600 mb-2">Total Net Worth</h2>
+        <p className={`text-4xl font-bold ${totalNetWorth < 0 ? 'text-red-600' : 'text-green-600'}`}>
+          {formatCurrency(totalNetWorth)}
+        </p>
+      </div>
       {/* --- ACCOUNTS MANAGEMENT SECTION --- */}
       <h1 className="text-3xl font-bold mb-6">Manage Accounts</h1>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">

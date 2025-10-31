@@ -6,6 +6,7 @@ import Spinner from '../components/Spinner';
 import Modal from '../components/Modal';
 import moment from 'moment';
 import useCurrency from '../hooks/useCurrency';
+import { expenseCategories, incomeCategories } from '../constants/categories';
 
 const formatDateTimeLocal = (dateString) => {
     const date = moment(dateString);
@@ -24,7 +25,7 @@ const TransactionsPage = () => {
     description: '',
     amount: '',
     type: 'expense',
-    category: '',
+    category: 'Uncategorized',
     date: formatDateTimeLocal(new Date()), 
     account: '',
   });
@@ -107,7 +108,19 @@ const TransactionsPage = () => {
 
 
   const handleFormChange = (e) => {
-    setNewTxForm({ ...newTxForm, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+
+    setNewTxForm(prev => {
+      const newState = {
+        ...prev,
+        [name]: value 
+      };
+
+      if (name === 'type') {
+        newState.category = value === 'income' ? incomeCategories[0] : expenseCategories[0];
+      }
+      return newState;
+    });
   };
 
   const handleFilterChange = (e) => {
@@ -117,7 +130,20 @@ const TransactionsPage = () => {
   };
 
   const handleEditFormChange = (e) => {
-      setEditingTransaction({ ...editingTransaction, [e.target.name]: e.target.value });
+     const { name, value } = e.target;
+
+     setEditingTransaction(prev => {
+        const newState = {
+           ...prev,
+           [name]: value
+        };
+
+        if (name === 'type') {
+           newState.category = value === 'income' ? incomeCategories[0] : expenseCategories[0];
+        }
+
+        return newState; 
+     });
   };
 
   const handleSubmit = async (e) => {
@@ -136,7 +162,7 @@ const TransactionsPage = () => {
         ...prev,
         description: '',
         amount: '',
-        category: '',
+        category: 'Uncategorized',
         type: 'expense',
         date: formatDateTimeLocal(new Date()), // Reset date
       }));
@@ -250,6 +276,7 @@ const TransactionsPage = () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+  const currentCategories = newTxForm.type === 'income' ? incomeCategories : expenseCategories;
 
   if (initialLoading) return <Spinner />;
 
@@ -304,7 +331,18 @@ const TransactionsPage = () => {
               {/* Category */}
               <div className="mb-4">
                 <label className="block text-gray-700 mb-2" htmlFor="category">Category</label>
-                <input type="text" name="category" id="category" value={newTxForm.category} onChange={handleFormChange} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Groceries, Salary" required />
+                <select 
+                  name="category" 
+                  id="category" 
+                  value={newTxForm.category} 
+                  onChange={handleFormChange} 
+                  className="w-full px-3 py-2 border rounded-lg bg-white" 
+                  required
+                >
+                  {currentCategories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
               </div>
               {/* Date & Time */}
               <div className="mb-4">
@@ -422,12 +460,23 @@ const TransactionsPage = () => {
                   {/* Category */}
                   <div className="mb-4">
                     <label className="block text-gray-700 mb-2" htmlFor="edit-category">Category</label>
-                    <input type="text" name="category" id="edit-category" value={editingTransaction.category} onChange={handleEditFormChange} className="w-full px-3 py-2 border rounded-lg" required />
+                    <select 
+                      name="category" 
+                      id="edit-category" 
+                      value={editingTransaction.category} 
+                      onChange={handleEditFormChange} 
+                      className="w-full px-3 py-2 border rounded-lg bg-white" 
+                      required
+                    >
+                      {(editingTransaction.type === 'income' ? incomeCategories : expenseCategories)
+                        .map(category => (
+                          <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
                   </div>
                   {/* Date & Time */}
                   <div className="mb-4">
                     <label className="block text-gray-700 mb-2" htmlFor="edit-date">Date & Time</label>
-                    {/* --- UPDATED: type="datetime-local" --- */}
                     <input type="datetime-local" name="date" id="edit-date" value={editingTransaction.date} onChange={handleEditFormChange} className="w-full px-3 py-2 border rounded-lg" required />
                   </div>
                   <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700">
